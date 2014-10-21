@@ -15,20 +15,23 @@ import (
   r "github.com/dancannon/gorethink"
 )
 
+// Base config fields
 type Config struct {
-  Port string
-  Root string
+  Port      string
+  Root      string
   DbAddress string
-  Database string
-  ImageDir string
-  Username string
-  Password string
+  Database  string
+  ImageDir  string
+  Username  string
+  Password  string
 }
 
 type ConfigFile struct {
   Server Config
 }
 
+// Default config in gcfg format
+// Unused parts get assigned 0 according to gcfg
 const defaultConfig = `
   [server]
   port = "8080"
@@ -39,6 +42,9 @@ const defaultConfig = `
 
 var globalConfig ConfigFile
 
+// Given a filepath, attempt to parse config from file
+// If file doesn't exist or parse fails, use default
+// Returns any error encountered
 func LoadConfiguration(cfgFilepath string) (err error){
 
   if cfgFilepath != "" {
@@ -56,6 +62,9 @@ func LoadConfiguration(cfgFilepath string) (err error){
   return
 }
 
+// Set the route for handling static serving of generated images
+// Set the route for POSTing dataurls
+// Start the server
 func RegisterHandlers(){
   http.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir(globalConfig.Server.ImageDir))))
   http.Handle("/stringtopng/", httpauth.SimpleBasicAuth(globalConfig.Server.Username, globalConfig.Server.Password)(http.HandlerFunc(stringToPngHandler)))
@@ -84,6 +93,8 @@ type MakeImageResponse struct{
   Filepath  string
 }
 
+// Handles "/stingtopng/" POST requests
+// Attempt to save png and return a json object with the static url
 func stringToPngHandler(w http.ResponseWriter, r *http.Request){
   if r.Method != "POST" {
     http.Error(w, r.Method+" not allowed", http.StatusMethodNotAllowed)
@@ -117,6 +128,9 @@ func stringToPngHandler(w http.ResponseWriter, r *http.Request){
   w.Write(json)
 }
 
+// Uses dataurl to convert the dataurl to a file
+// Filename is [Sitename]-[current timestamp].png
+// Returns the full filepath and any encountered errors
 func stringToPngFile(m MakeImageRequest) (filepath string, err error){
   dataURL, err := dataurl.DecodeString(m.Dataurl)
 
@@ -129,11 +143,11 @@ func stringToPngFile(m MakeImageRequest) (filepath string, err error){
   filename := m.Sitename+"-"+t.Format("20060102150405")+".png"
 
   if dataURL.ContentType() == "image/png" {
-    err = ioutil.WriteFile(globalConfig.Server.ImageDir+"/"+filename, dataURL.Data, 0644)
+    filepath = globalConfig.Server.ImageDir+"/"+filename
+    err = ioutil.WriteFile(filepath, dataURL.Data, 0644)
     if err != nil {
       log.Println(err)
     }
-    filepath = filename
   } else {
     err = errors.New("Invalid filetype")
   }
@@ -141,6 +155,7 @@ func stringToPngFile(m MakeImageRequest) (filepath string, err error){
   return
 }
 
+// Initialize the database session so we can index generated files
 func InitDB() *r.Session {
 
   session, err := r.Connect(r.ConnectOpts{
