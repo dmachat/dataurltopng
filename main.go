@@ -11,11 +11,12 @@ import (
 
   "code.google.com/p/gcfg"
   "github.com/vincent-petithory/dataurl"
+  "github.com/goji/httpauth"
   r "github.com/dancannon/gorethink"
 )
 
 type Config struct {
-  Port int
+  Port string
   Root string
   DbAddress string
   Database string
@@ -30,10 +31,10 @@ type ConfigFile struct {
 
 const defaultConfig = `
   [server]
-  port = 8080
+  port = "8080"
   imagedir = "images"
-  username = "chartbuilder"
-  password = "chartbuilder"
+  username = "images"
+  password = "dataurltopng"
 `
 
 var globalConfig ConfigFile
@@ -49,7 +50,7 @@ func LoadConfiguration(cfgFilepath string) (err error){
   }
 
   if err != nil {
-    log.Fatal(err)
+    log.Println(err)
   }
 
   return
@@ -57,18 +58,18 @@ func LoadConfiguration(cfgFilepath string) (err error){
 
 func RegisterHandlers(){
   http.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir(globalConfig.Server.ImageDir))))
-  http.HandleFunc("/stringtopng/", stringToPngHandler)
-  log.Fatal(http.ListenAndServe(":8080", nil))
+  http.Handle("/stringtopng/", httpauth.SimpleBasicAuth(globalConfig.Server.Username, globalConfig.Server.Password)(http.HandlerFunc(stringToPngHandler)))
+  log.Fatal(http.ListenAndServe(":"+globalConfig.Server.Port, nil))
 }
 
 func main(){
   err := LoadConfiguration("Config.gcfg")
 
   if err != nil {
-    log.Fatalln(err.Error())
+    log.Println(err.Error())
   }
 
-  fmt.Printf("Doc Root: %s\nListen On: :%d\n", globalConfig.Server.Root, globalConfig.Server.Port)
+  fmt.Printf("Doc Root: %s\nListen On: :%s\n", globalConfig.Server.Root, globalConfig.Server.Port)
 
   RegisterHandlers()
 }
@@ -120,7 +121,7 @@ func stringToPngFile(m MakeImageRequest) (filepath string, err error){
   dataURL, err := dataurl.DecodeString(m.Dataurl)
 
   if err != nil {
-    log.Fatal(err)
+    log.Println(err)
     return
   }
 
@@ -128,9 +129,9 @@ func stringToPngFile(m MakeImageRequest) (filepath string, err error){
   filename := m.Sitename+"-"+t.Format("20060102150405")+".png"
 
   if dataURL.ContentType() == "image/png" {
-    err = ioutil.WriteFile(filename, dataURL.Data, 0644)
+    err = ioutil.WriteFile(globalConfig.Server.ImageDir+"/"+filename, dataURL.Data, 0644)
     if err != nil {
-      log.Fatal(err)
+      log.Println(err)
     }
     filepath = filename
   } else {
