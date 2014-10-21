@@ -17,6 +17,8 @@ import (
 type Config struct {
   Port int
   Root string
+  DbAddress string
+  Database string
   ImageDir string
   Username string
   Password string
@@ -34,16 +36,16 @@ const defaultConfig = `
   password = "chartbuilder"
 `
 
-var globalConfig *ConfigFile
+var globalConfig ConfigFile
 
-func LoadConfiguration(cfgFile string) (cfg ConfigFile, err error){
+func LoadConfiguration(cfgFilepath string) (err error){
 
-  if cfgFile != "" {
-    err = gcfg.ReadFileInto(&cfg, cfgFile)
+  if cfgFilepath != "" {
+    err = gcfg.ReadFileInto(&globalConfig, cfgFilepath)
   }
 
   if err != nil {
-    err = gcfg.ReadStringInto(&cfg, defaultConfig)
+    err = gcfg.ReadStringInto(&globalConfig, defaultConfig)
   }
 
   if err != nil {
@@ -53,22 +55,22 @@ func LoadConfiguration(cfgFile string) (cfg ConfigFile, err error){
   return
 }
 
-func RegisterHandlers(cfg ConfigFile){
-  http.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir(cfg.Server.ImageDir))))
+func RegisterHandlers(){
+  http.Handle("/images/", http.StripPrefix("/images/", http.FileServer(http.Dir(globalConfig.Server.ImageDir))))
   http.HandleFunc("/stringtopng/", stringToPngHandler)
   log.Fatal(http.ListenAndServe(":8080", nil))
 }
 
 func main(){
-  config, err := LoadConfiguration("Config.gcfg")
+  err := LoadConfiguration("Config.gcfg")
 
   if err != nil {
     log.Fatalln(err.Error())
   }
 
-  fmt.Printf("Doc Root: %s\nListen On: :%d\n", config.Server.Root, config.Server.Port)
+  fmt.Printf("Doc Root: %s\nListen On: :%d\n", globalConfig.Server.Root, globalConfig.Server.Port)
 
-  RegisterHandlers(config)
+  RegisterHandlers()
 }
 
 type MakeImageRequest struct{
@@ -87,7 +89,7 @@ func stringToPngHandler(w http.ResponseWriter, r *http.Request){
     return
   }
 
-  session := InitDB(*cfg)
+  //_ := InitDB()
 
   req := MakeImageRequest{}
   dec := json.NewDecoder(r.Body)
@@ -138,22 +140,22 @@ func stringToPngFile(m MakeImageRequest) (filepath string, err error){
   return
 }
 
-func InitDB(cfg ConfigFile) *r.Session {
+func InitDB() *r.Session {
 
   session, err := r.Connect(r.ConnectOpts{
-    Address:  cfg.Server.dbAddress, // "localhost:28015"
-    Database: cfg.Server.Database,
+    Address:  globalConfig.Server.DbAddress, // "localhost:28015"
+    Database: globalConfig.Server.Database,
   })
   if err != nil {
     fmt.Printf("No database connection. Conversions will not be logged.")
   }
 
-  err = r.DbCreate(cfg.Server.Database).Exec(session)
+  err = r.DbCreate(globalConfig.Server.Database).Exec(session)
   if err != nil {
     fmt.Println(err)
   }
 
-  _, err = r.Db(cfg.Server.Database).TableCreate("images").RunWrite(session)
+  _, err = r.Db(globalConfig.Server.Database).TableCreate("images").RunWrite(session)
   if err != nil {
     fmt.Println(err)
   }
